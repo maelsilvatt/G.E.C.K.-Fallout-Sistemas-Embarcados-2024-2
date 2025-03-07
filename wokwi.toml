@@ -10,4 +10,4 @@ to = "target:80"
 
 [[chip]]
 name = 'bmp280'
-binary = 'chips/bmp280.chip.wasm'
+binary = 'dist/bmp280.chip.wasm'
