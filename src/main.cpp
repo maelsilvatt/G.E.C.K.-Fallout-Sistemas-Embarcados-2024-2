@@ -127,7 +127,7 @@ void setup() {
   // Inicia o display LCD
   lcd.init();
   lcd.backlight();
-
+  
   // Verifica a comunicação dos sensores do sistema
   verificarBMP280();
   verificarMPU6050();
@@ -197,8 +197,15 @@ void rotacionar_servo() {
 
  // Função para escrever no painel LCD
  void escreve_lcd() {     
-    lcd.setCursor(3, 0);
-    lcd.print("Teste!");    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Teste!");   
+    delay(1000);     
+
+    lcd.clear();
+    lcd.setCursor(0, 1);
+    lcd.print("Teste!");   
+    delay(1000);     
  }
 
 // Função para ligar/desligar o relé
@@ -216,10 +223,10 @@ void loop() {
   // Ler sensores (descomente os que deseja usar)
   // ler_pressao();        // Lê a pressão atmosférica
   // ler_umidade();        // Lê a umidade do ar
-  ler_temperatura();    // Lê a temperatura do termistor NTC
+  // ler_temperatura();    // Lê a temperatura do termistor NTC
   // ler_acelerometro();   // Lê os dados do acelerômetro
-  // rotacionar_servo();   // Gira o servo motor
-  // alterna_rele();       // Alterna o estado do relé
+  rotacionar_servo();   // Gira o servo motor
+  alterna_rele();       // Alterna o estado do relé
 
-  delay(5000);
+  delay(2500);
 }
