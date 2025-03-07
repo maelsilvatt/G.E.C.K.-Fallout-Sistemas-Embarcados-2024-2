@@ -43,7 +43,7 @@ Adafruit_MPU6050 mpu;
 DHTesp dhtSensor;
 
 // Define o pino do termistor NTC
-#define NTC_PIN 25
+#define NTC_PIN 34
 
 // Define o valor beta do termistor NTC
 #define BETA 3950
@@ -102,12 +102,11 @@ void verificarDHT() {
 
 // Função para verificar se o NTC está conectado
 void verificarNTC() {
-  int analogValue = analogRead(NTC_PIN);
-  pinMode(NTC_PIN, INPUT);
+  int analogValue = analogRead(NTC_PIN);  // Leitura do valor analógico
 
   // Verifica se a leitura do sensor é válida
-  if (analogValue == 0 || analogValue >= 1023) {  
-    Serial.println("Termistor NTC não detectado!");
+  if (analogValue == 0 || analogValue == 4095) {  
+    Serial.println("Termistor NTC não detectado ou com mau contato!");
   } else {
     Serial.println("Termistor NTC pronto!");
   }

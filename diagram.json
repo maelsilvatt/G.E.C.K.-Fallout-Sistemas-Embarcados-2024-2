@@ -93,7 +93,6 @@
     [ "bb2:bn.9", "bb2:11b.i", "black", [ "v0" ] ],
     [ "bb2:bp.6", "bb2:8b.i", "red", [ "v0" ] ],
     [ "dht1:SDA", "esp:13", "blue", [ "v0" ] ],
-    [ "ntc1:OUT", "esp:25", "blue", [ "v0" ] ],
     [ "dht1:VCC", "bb2:8b.h", "", [ "$bb" ] ],
     [ "dht1:SDA", "bb2:9b.h", "", [ "$bb" ] ],
     [ "dht1:NC", "bb2:10b.h", "", [ "$bb" ] ],
@@ -101,7 +100,8 @@
     [ "ntc1:GND", "bb2:22t.d", "", [ "$bb" ] ],
     [ "ntc1:VCC", "bb2:21t.d", "", [ "$bb" ] ],
     [ "ntc1:OUT", "bb2:20t.d", "", [ "$bb" ] ],
-    [ "bb2:21t.e", "esp:3V3", "red", [ "v0", "h124.8", "v-67.2", "h9.6" ] ]
+    [ "esp:3V3", "ntc1:VCC", "red", [ "h-9.45", "v67.2" ] ],
+    [ "esp:34", "bb2:20t.e", "blue", [ "h-9.45", "v28.8" ] ]
   ],
   "dependencies": {}
 }
