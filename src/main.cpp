@@ -166,16 +166,16 @@ void ler_umidade() {
 
 // Função para ler a temperatura 
 void ler_temperatura() {
-  int analogValue = analogRead(NTC_PIN);
+  int analogValue = analogRead(NTC_PIN);  // Leitura do valor analógico (0 a 4095)
 
   // Verifica se a leitura do sensor é válida
-  if (analogValue == 0 || analogValue >= 1023) {  
+  if (analogValue == 0 || analogValue == 4095) {
     Serial.println("Erro: Falha na leitura do termistor NTC!");
     return;
   }
 
   // Converte a leitura analógica para temperatura em Celsius
-  float celsius = 1 / (log(1 / (1023. / analogValue - 1)) / BETA + 1.0 / 298.15) - 273.15;
+  float celsius = 1 / (log(1 / (4095. / analogValue - 1)) / BETA + 1.0 / 298.15) - 273.15;
 
   Serial.print("Temperatura: ");
   Serial.print(celsius);
@@ -216,7 +216,7 @@ void loop() {
   // Ler sensores (descomente os que deseja usar)
   // ler_pressao();        // Lê a pressão atmosférica
   // ler_umidade();        // Lê a umidade do ar
-  // ler_temperatura();    // Lê a temperatura do termistor NTC
+  ler_temperatura();    // Lê a temperatura do termistor NTC
   // ler_acelerometro();   // Lê os dados do acelerômetro
   // rotacionar_servo();   // Gira o servo motor
   // alterna_rele();       // Alterna o estado do relé
