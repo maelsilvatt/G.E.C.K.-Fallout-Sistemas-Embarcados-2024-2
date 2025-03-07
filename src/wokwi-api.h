@@ -110,15 +110,15 @@ typedef struct {
   uint32_t reserved[8];
 } timer_config_t;
 
-typedef uint32_t timer_t;
+typedef uint32_t wokwi_timer_t;
 
-extern __attribute__((import_name("timerInit"))) timer_t timer_init(const timer_config_t *config);
-extern __attribute__((import_name("timerStart"))) void timer_start(const timer_t timer, uint32_t micros, bool repeat);
-extern __attribute__((import_name("timerStartNanos"))) void timer_start_ns_d(const timer_t timer, double nanos, bool repeat);
-static void timer_start_ns(const timer_t timer, uint64_t nanos, bool repeat) {
+extern __attribute__((import_name("timerInit"))) wokwi_timer_t timer_init(const timer_config_t *config);
+extern __attribute__((import_name("timerStart"))) void timer_start(const wokwi_timer_t timer, uint32_t micros, bool repeat);
+extern __attribute__((import_name("timerStartNanos"))) void timer_start_ns_d(const wokwi_timer_t timer, double nanos, bool repeat);
+static void timer_start_ns(const wokwi_timer_t timer, uint64_t nanos, bool repeat) {
   timer_start_ns_d(timer, (double)nanos, repeat);
 }
-extern __attribute__((import_name("timerStop"))) void timer_stop(const timer_t timer);
+extern __attribute__((import_name("timerStop"))) void timer_stop(const wokwi_timer_t timer);
 
 extern __attribute__((import_name("getSimNanos"))) double get_sim_nanos_d(void);
 
