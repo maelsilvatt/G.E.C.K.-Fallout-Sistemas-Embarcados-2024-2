@@ -39,6 +39,11 @@
 #define NTC_PIN    34
 #define RELAY_PIN  12
 
+// Botões
+#define UP_PIN 17
+#define DOWN_PIN 16
+#define SELECT_PIN 0
+
 // Constantes
 #define BETA       3950
 
@@ -73,11 +78,46 @@ typedef struct {
 
 Sensor_data sensor_data;
 
+// Telas do display
+typedef struct {
+  const char* screens[22][4] = {
+    { "", "Loading system.", "", "Initializing subsystems..." }, // Iniciando sistema 1
+    { "", "Loading system..", "", "Checking Vault Integrity..." }, // Iniciando sistema 2
+    { "", "Loading system...", "", "Booting up protocols..." }, // Iniciando sistema 3
+    { "", "G.E.C.K", "Vault-Tec", "" }, // Tela Inicial (Nome do sistema e logo da Vault-Tec)
+    { "", "Welcome!", "", "" }, // Tela de boas vindas 
+    { "", "Welcome!", "Engineer #22534", "" }, // Tela de boas vindas (c/ credenciais)
+    { "-> Start procedure", "  Verify Sensors", "  Credits", "  Turn off" }, // Tela do menu (primeira opção)
+    { "   Start procedure", "->Verify Sensors", "  Credits", "  Turn off" }, // Tela do menu (segunda opção)
+    { "   Start procedure", "  Verify Sensors", "->Credits", "  Turn off" }, // Tela do menu (terceira opção)
+    { "   Start procedure", "  Verify Sensors", "  Credits", "->Turn off" }, // Tela do menu (quarta opção)
+    { "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE", "-> Back" }, // Verificando sensores
+    { "ERROR!", "Sensor failure", "Check connections", "-> Retry" }, // Tela de erro de conexão
+    { "G.E.C.K Project", "Lead Eng.: Ismael S.", "Vault 69", "-> Back" }, // Tela de Créditos
+    { "", "Starting Procedure.", "", "Initializing subsystems..." }, // Iniciando varredura 1
+    { "", "Starting Procedure..", "", "Calibrating sensors..." }, // Iniciando varredura 2
+    { "", "Starting Procedure...", "", "Finalizing startup..." }, // Iniciando varredura 3
+    { "Analyzing environment", "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE" }, // Analisando ambiente
+    { "Neutralizing radiation", "Processing...", "Estimated time: 2 min", "RAD_INFO_HERE" }, // Reduzindo radiação
+    { "Regulating humidity", "Adjusting moisture", "Balancing ecosystem", "HUMIDITY_INFO_HERE" }, // Regulando umidade
+    { "Optimizing temperature", "Calibrating levels...", "Maintaining stability", "TEMP_INFO_HERE" }, // Ajustando temperatura
+    { "Generating plant life", "Deploying seeds...", "Monitoring growth", "" }, // Criando vegetação
+    { "Terraforming Complete!", "Life support stable", "Welcome to Eden", "System shutting down..." } // Processo concluído
+  };
+
+  int currentScreen = 0; // Índice da tela atual
+  bool in_menu = false; // Indica se o usuário está no menu
+} Display_data;
+
+Display_data display_data;
+
+
 sensors_event_t accelEvent;
 
 // Handlers do FreeRTOS
 SemaphoreHandle_t x_mutex = NULL;
 TaskHandle_t task_update_LCD_handle = NULL;
+TaskHandle_t task_read_buttons_handle = NULL;
 TaskHandle_t task_read_DHT_handle = NULL;
 TaskHandle_t task_read_MPU_handle = NULL;
 TaskHandle_t task_read_BMP_handle = NULL;
@@ -93,6 +133,7 @@ void controlServo();
 void toggleRelay();
 
 void vTaskUpdateDisplay(void *pvParams);
+void vTaskReadButtons(void *pvParams);
 void vTaskReadDHT(void *pvParams);
 void vTaskReadMPU(void *pvParams);
 void vTaskReadRadScan3000(void *pvParams);
@@ -116,13 +157,14 @@ void setup() {
   // Associa as tasks ao semáfoto e a um core
   if (x_mutex != NULL ) {    
     // Adiciona as tarefas de leitura dos sensores ao mutex
-    xTaskCreatePinnedToCore(vTaskReadDHT, "task_dht", 4096, NULL, 1, &task_read_DHT_handle, 0);
-    xTaskCreatePinnedToCore(vTaskReadMPU, "task_dht", 4096, NULL, 1, &task_read_MPU_handle, 0);
-    xTaskCreatePinnedToCore(vTaskReadRadScan3000, "task_dht", 4096, NULL, 1, &task_read_BMP_handle, 0);
-    xTaskCreatePinnedToCore(vTaskReadNTC, "task_dht", 4096, NULL, 1, &task_read_NTC_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadDHT, "task_dht", 4096, NULL, 0, &task_read_DHT_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadMPU, "task_mpu", 4096, NULL, 0, &task_read_MPU_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadRadScan3000, "task_radscan", 4096, NULL, 0, &task_read_BMP_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadNTC, "task_ntc", 4096, NULL, 0, &task_read_NTC_handle, 0);
 
     // Adiciona a tarefa de atualizar o display ao mutex
-    xTaskCreatePinnedToCore(vTaskUpdateDisplay, "task_dht", 4096, NULL, 1, &task_update_LCD_handle, 1);
+    xTaskCreatePinnedToCore(vTaskUpdateDisplay, "task_lcd", 4096, NULL, 1, &task_update_LCD_handle, 1);
+    xTaskCreatePinnedToCore(vTaskUpdateDisplay, "task_buttons", 4096, NULL, 1, &task_read_buttons_handle, 1);
   }
 }
 
@@ -140,22 +182,24 @@ void setupPins() {
   
   // Inicializa o pino do NTC como entrada analógica (PIN 34 suporta ADC)
   pinMode(NTC_PIN, INPUT);
+
+  // Inicializa os pinos dos botões
+  pinMode(UP_PIN, INPUT_PULLUP);
+  pinMode(DOWN_PIN, INPUT_PULLUP);
+  pinMode(SELECT_PIN, INPUT_PULLUP);
 }
 
+// Inicializa todos os sensores
 void setupSensors() {
   Wire.begin();
   
   checkSensorConnection(bmp.begin(), "BMP280");
-  // bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
-  //                 Adafruit_BMP280::SAMPLING_X2,
-  //                 Adafruit_BMP280::SAMPLING_X16,
-  //                 Adafruit_BMP280::FILTER_X16,
-  //                 Adafruit_BMP280::STANDBY_MS_500);
 
   checkSensorConnection(mpu.begin(), "MPU6050");
   dhtSensor.setup(DHT_PIN, DHTesp::DHT22);
 }
 
+// Verifica a comunicação serial dos sensores
 void checkSensorConnection(bool success, const char* sensorName) {
   int attempts = 5;
   while(!success && attempts-- > 0) {
@@ -168,6 +212,7 @@ void checkSensorConnection(bool success, const char* sensorName) {
 void loop() {
 }
 
+// Task de leitura dos dados do DHT
 void vTaskReadDHT(void *pvParams){
   while (true) {
     auto dhtData = dhtSensor.getTempAndHumidity();
@@ -183,14 +228,15 @@ void vTaskReadDHT(void *pvParams){
       xSemaphoreGive(x_mutex);
     }
     
-    vTaskDelay(2000); // Delay para evitar sobrecarga da CPU (1 segundo)
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // Delay para evitar sobrecarga da CPU (1 segundo)
   }
 }
 
+// Task de leitura dos dados do Rad Scan 3000 (BPM280 modificado)
 void vTaskReadRadScan3000(void *pvParams) {
   while (true) {
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
-      // Leitura da temperatura do BMP280
+      // Leitura da temperatura do BMP280 e interpreta como radiação
       float temp = bmp.readTemperature();
 
       // Definição dos limites
@@ -210,10 +256,11 @@ void vTaskReadRadScan3000(void *pvParams) {
       xSemaphoreGive(x_mutex);
     }
 
-    vTaskDelay(500); // Delay para evitar sobrecarga
+    vTaskDelay(500 / portTICK_PERIOD_MS); // Delay para evitar sobrecarga
   }
 }
 
+// Task de leitura dos dados do MPU
 void vTaskReadMPU(void *pvParams) {
   while (true) {
     // Protege o acesso aos dados compartilhados
@@ -230,10 +277,11 @@ void vTaskReadMPU(void *pvParams) {
       xSemaphoreGive(x_mutex);
     }
 
-    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay para evitar sobrecarga da CPU (1 segundo)
   }
 }
 
+// Task de leitura dos dados do NTC
 void vTaskReadNTC(void *pvParams) {
   while (true) {
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
@@ -252,6 +300,7 @@ void vTaskReadNTC(void *pvParams) {
   }
 }
 
+// Task de atualização do display
 void vTaskUpdateDisplay(void *pvParams) {
   while (true) {
     // Protege o acesso aos dados compartilhados
@@ -297,7 +346,28 @@ void vTaskUpdateDisplay(void *pvParams) {
     toggleRelay();
 
     // Atrasar a atualização a cada 1 segundos
-    vTaskDelay(1000);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  }
+}
+
+// Task de leitura dos botões
+void vTaskReadButtons(void *pvParams) {
+  while (true) {
+    if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
+      // Leitura dos botões
+      if (digitalRead(UP_PIN) == LOW) {
+        sensor_data.buttonPressed = 0;
+      } else if (digitalRead(DOWN_PIN) == LOW) {
+        sensor_data.buttonPressed = 1;
+      } else if (digitalRead(SELECT_PIN) == LOW) {
+        sensor_data.buttonPressed = 2;
+      } else {
+        sensor_data.buttonPressed = -1;
+      }
+      
+      xSemaphoreGive(x_mutex);
+    }
+    vTaskDelay(10 / portTICK_PERIOD_MS); // Pequeno delay para evitar polling excessivo
   }
 }
 
