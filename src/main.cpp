@@ -41,9 +41,6 @@
 
 // Constantes
 #define BETA       3950
-#define BETA       3950  // Coeficiente Beta do termistor
-#define R_REF      10000 // Resistor fixo de 10kΩ usado no divisor
-#define T0         298.15 // Temperatura de referência (25°C em Kelvin)
 
 /**************************************
  * Instâncias de Sensores/Atuadores
@@ -70,7 +67,7 @@ typedef struct {
   float accelX = 0;
   float accelY = 0;
   float accelZ = 0;
-  float pressureBMP = 0;
+  float rad_level  = 0;
   float temperatureNTC = 0;
 } Sensor_data;
 
@@ -98,7 +95,7 @@ void toggleRelay();
 void vTaskUpdateDisplay(void *pvParams);
 void vTaskReadDHT(void *pvParams);
 void vTaskReadMPU(void *pvParams);
-void vTaskReadBMP(void *pvParams);
+void vTaskReadRadScan3000(void *pvParams);
 void vTaskReadNTC(void *pvParams);
 
 /**************************************
@@ -121,7 +118,7 @@ void setup() {
     // Adiciona as tarefas de leitura dos sensores ao mutex
     xTaskCreatePinnedToCore(vTaskReadDHT, "task_dht", 4096, NULL, 1, &task_read_DHT_handle, 0);
     xTaskCreatePinnedToCore(vTaskReadMPU, "task_dht", 4096, NULL, 1, &task_read_MPU_handle, 0);
-    xTaskCreatePinnedToCore(vTaskReadBMP, "task_dht", 4096, NULL, 1, &task_read_BMP_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadRadScan3000, "task_dht", 4096, NULL, 1, &task_read_BMP_handle, 0);
     xTaskCreatePinnedToCore(vTaskReadNTC, "task_dht", 4096, NULL, 1, &task_read_NTC_handle, 0);
 
     // Adiciona a tarefa de atualizar o display ao mutex
@@ -190,18 +187,17 @@ void vTaskReadDHT(void *pvParams){
   }
 }
 
-void vTaskReadBMP(void *pvParams) {
+void vTaskReadRadScan3000(void *pvParams) {
   while (true) {
-    // Protege o acesso aos dados compartilhados
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
-      // Leitura BMP280
-      sensor_data.pressureBMP = bmp.readPressure() / 100.0F; // Convertendo para hPa
-
-      // Liberar o mutex após a leitura
+      // Leitura da radiação (lê temperatura dentro de um range específico)
+      sensor_data.rad_level = bmp.readTemperature();
+      
+      // Libera o mutex
       xSemaphoreGive(x_mutex);
     }
 
-    vTaskDelay(500); // Delay para evitar sobrecarga da CPU (1 segundo)
+    vTaskDelay(500); // Delay para evitar sobrecarga
   }
 }
 
@@ -229,16 +225,11 @@ void vTaskReadNTC(void *pvParams) {
   while (true) {
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
       // Leitura do ADC
-      int adc = analogRead(NTC_PIN);
+      int analogValue = analogRead(NTC_PIN);
 
-      if (adc > 0 && adc < 4095) { 
-        // Calcular a resistência do NTC usando a fórmula do divisor de tensão
-        float Vout = adc * (3.3 / 4095.0); // Converte ADC para tensão
-        float Rntc = R_REF * (Vout / (3.3 - Vout)); // Calcula a resistência do NTC
-
-        // Fórmula de Steinhart-Hart simplificada para temperatura
-        float tempKelvin = 1.0 / ((log(Rntc / R_REF) / BETA) + (1.0 / T0));
-        sensor_data.temperatureNTC = tempKelvin - 273.15; // Converte Kelvin para Celsius
+      // Converte para Celsius
+      if (analogValue > 0 && analogValue < 4095) {                         
+        sensor_data.temperatureNTC = 1 / (log(1 / (4095. / analogValue - 1)) / BETA + 1.0 / 298.15) - 273.15;        
       }
 
       xSemaphoreGive(x_mutex);
@@ -257,25 +248,25 @@ void vTaskUpdateDisplay(void *pvParams) {
       
       // Exibir umidade
       lcd.setCursor(0, 0);
-      lcd.print("Umidade: ");
+      lcd.print("Humidity: ");
       lcd.print(sensor_data.humidityDHT, 1);
       lcd.print(" %");
 
       // Exibir aceleração
       lcd.setCursor(0, 1);
-      lcd.print("Aceleracao Y: ");
+      lcd.print("Acell Y: ");
       lcd.print(sensor_data.accelY, 1);
       lcd.print(" m/s²");
 
-      // Exibir pressão
+      // Exibir radiação
       lcd.setCursor(0, 2);
-      lcd.print("Pressao: ");
-      lcd.print(sensor_data.pressureBMP, 1);
-      lcd.print(" hPa");
+      lcd.print("Radiation: ");
+      lcd.print(sensor_data.rad_level , 1);
+      lcd.print(" Sv/h");
 
       // Exibir temperatura NTC
       lcd.setCursor(0, 3);
-      lcd.print("Temp NTC: ");
+      lcd.print("Temperature: ");
       lcd.print(sensor_data.temperatureNTC, 1);
       lcd.print(" C");    
 
@@ -300,13 +291,13 @@ void vTaskUpdateDisplay(void *pvParams) {
 void controlServo() {
   for (int pos = 0; pos <= 180; pos++) {
     servo.write(pos);
-    delay(1); // Delay necessário para movimento suave
+    delay(5); // Delay necessário para movimento suave
   }
 
   // Movimento de 180 a 0 graus
   for (int pos = 180; pos >= 0; pos--) {
     servo.write(pos);
-    delay(1); // Delay necessário para movimento suave
+    delay(5); // Delay necessário para movimento suave
   }
 }
 

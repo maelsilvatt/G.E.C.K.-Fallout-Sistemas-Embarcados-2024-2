@@ -1,5 +1,5 @@
 {
-  "name": "BMP280",
+  "name": "RadScan-3000",
   "author": "Luis Miguel Capacho Valbuena",
   "pins": [
     "VCC",
@@ -13,10 +13,10 @@
   "controls": [
     {
       "id": "temp",
-      "label": "Temperature",
+      "label": "Radiation (µSv/h)",
       "type": "range",
       "min": 0,
-      "max": 1048576,
+      "max": 99,
       "step": 1
     }
   ]

@@ -67,7 +67,6 @@
     [ "chip1:CS", "esp:5", "blue", [ "h-9.6", "v96" ] ],
     [ "chip1:SDO", "esp:19", "orange", [ "h0", "v67.2" ] ],
     [ "gnd1:GND", "bb2:tn.1", "black", [ "v0" ] ],
-    [ "chip1:VCC", "bb2:tp.25", "red", [ "h-201.6" ] ],
     [ "chip1:GND", "bb2:tn.24", "black", [ "h-19.2", "v-19.2", "h-192" ] ],
     [ "imu1:VCC", "bb2:tp.24", "red", [ "v0", "h19.28", "v-124.8", "h-336" ] ],
     [ "imu1:GND", "bb2:tn.23", "black", [ "v-9.6", "h38.48", "v-124.8", "h-355.2" ] ],
@@ -102,7 +101,8 @@
     [ "dht1:GND", "bb2:11b.h", "", [ "$bb" ] ],
     [ "ntc1:GND", "bb2:22t.d", "", [ "$bb" ] ],
     [ "ntc1:VCC", "bb2:21t.d", "", [ "$bb" ] ],
-    [ "ntc1:OUT", "bb2:20t.d", "", [ "$bb" ] ]
+    [ "ntc1:OUT", "bb2:20t.d", "", [ "$bb" ] ],
+    [ "chip1:VCC", "esp:3V3", "red", [ "h-153.6" ] ]
   ],
   "dependencies": {}
 }
