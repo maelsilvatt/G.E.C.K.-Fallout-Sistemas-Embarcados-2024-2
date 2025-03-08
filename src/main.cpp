@@ -146,11 +146,11 @@ void setupSensors() {
   Wire.begin();
   
   checkSensorConnection(bmp.begin(), "BMP280");
-  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
-                  Adafruit_BMP280::SAMPLING_X2,
-                  Adafruit_BMP280::SAMPLING_X16,
-                  Adafruit_BMP280::FILTER_X16,
-                  Adafruit_BMP280::STANDBY_MS_500);
+  // bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
+  //                 Adafruit_BMP280::SAMPLING_X2,
+  //                 Adafruit_BMP280::SAMPLING_X16,
+  //                 Adafruit_BMP280::FILTER_X16,
+  //                 Adafruit_BMP280::STANDBY_MS_500);
 
   checkSensorConnection(mpu.begin(), "MPU6050");
   dhtSensor.setup(DHT_PIN, DHTesp::DHT22);
@@ -190,8 +190,21 @@ void vTaskReadDHT(void *pvParams){
 void vTaskReadRadScan3000(void *pvParams) {
   while (true) {
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
-      // Leitura da radiação (lê temperatura dentro de um range específico)
-      sensor_data.rad_level = bmp.readTemperature();
+      // Leitura da temperatura do BMP280
+      float temp = bmp.readTemperature();
+
+      // Definição dos limites
+      float tempMin = -123.5;
+      float tempMax = 174.1;
+      float radMin = 0.0;
+      float radMax = 99.0;
+
+      // Mapeamento linear da temperatura para radiação
+      sensor_data.rad_level = (temp - tempMin) * (radMax - radMin) / (tempMax - tempMin) + radMin;
+
+      // Garantir que o valor de radiação fique dentro dos limites 0-99
+      if (sensor_data.rad_level < radMin) sensor_data.rad_level = radMin;
+      if (sensor_data.rad_level > radMax) sensor_data.rad_level = radMax;
       
       // Libera o mutex
       xSemaphoreGive(x_mutex);

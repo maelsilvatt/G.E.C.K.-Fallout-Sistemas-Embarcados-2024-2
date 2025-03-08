@@ -16,7 +16,7 @@
       "label": "Radiation (µSv/h)",
       "type": "range",
       "min": 0,
-      "max": 99,
+      "max": 1048575,
       "step": 1
     }
   ]
