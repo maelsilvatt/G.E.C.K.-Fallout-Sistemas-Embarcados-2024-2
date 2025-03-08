@@ -15,6 +15,7 @@
 // FreeRTOS
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 /**************************************
  * Definições de Hardware
@@ -60,15 +61,29 @@ const unsigned long SENSOR_INTERVAL = 2500;
 const unsigned long DISPLAY_INTERVAL = 2000;
 
 // Armazenamento de leituras
-float temperatureDHT = 0;
-float humidityDHT = 0;
-float pressureBMP = 0;
-float temperatureNTC = 0;
+typedef struct {
+  float temperatureDHT = 0;
+  float humidityDHT = 0;
+  float accelX = 0;
+  float accelY = 0;
+  float accelZ = 0;
+  float pressureBMP = 0;
+  float temperatureNTC = 0;
+} Sensor_data;
+
+Sensor_data sensor_data;
+
 sensors_event_t accelEvent;
 
-// Estados de exibição
-enum DisplayState { HUMIDITY, PRESSURE, ACCEL, TEMP_NTC, NUM_STATES };
-DisplayState currentDisplay = HUMIDITY;
+// Handlers do FreeRTOS
+SemaphoreHandle_t x_mutex = NULL;
+TaskHandle_t task_update_LCD_handle = NULL;
+TaskHandle_t task_update_relay_handle = NULL;
+TaskHandle_t task_update_servo_handle = NULL;
+TaskHandle_t task_read_DHT_handle = NULL;
+TaskHandle_t task_read_MPU_handle = NULL;
+TaskHandle_t task_read_BMP_handle = NULL;
+TaskHandle_t task_read_NTC_handle = NULL;
 
 /**************************************
  * Protótipos de Funções
@@ -76,10 +91,14 @@ DisplayState currentDisplay = HUMIDITY;
 void setupPins();
 void setupSensors();
 void checkSensorConnection(bool success, const char* sensorName);
-void readSensors();
-void updateDisplay();
-void controlServo(int angle);
+void controlServo();
 void toggleRelay();
+
+void vTaskUpdateDisplay(void *pvParams);
+void vTaskReadDHT(void *pvParams);
+void vTaskReadMPU(void *pvParams);
+void vTaskReadBMP(void *pvParams);
+void vTaskReadNTC(void *pvParams);
 
 /**************************************
  * Implementação
@@ -88,14 +107,41 @@ void setup() {
   Serial.begin(115200);
   setupPins();
   setupSensors();
+
+  // Inicia o display LCD
   lcd.init();
   lcd.backlight();
+
+  // Cria o mutex para gerenciar o acesso às variáveis globais
+  x_mutex = xSemaphoreCreateMutex();
+
+  // Associa as tasks ao semáfoto e a um core
+  if (x_mutex != NULL ) {    
+    // Adiciona as tarefas de leitura dos sensores ao mutex
+    xTaskCreatePinnedToCore(vTaskReadDHT, "task_dht", 4096, NULL, 1, &task_read_DHT_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadMPU, "task_dht", 4096, NULL, 1, &task_read_MPU_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadBMP, "task_dht", 4096, NULL, 1, &task_read_BMP_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadNTC, "task_dht", 4096, NULL, 1, &task_read_NTC_handle, 0);
+
+    // Adiciona a tarefa de atualizar o display ao mutex
+    xTaskCreatePinnedToCore(vTaskUpdateDisplay, "task_dht", 4096, NULL, 1, &task_update_LCD_handle, 1);
+  }
 }
 
+// Inicializa todos os pins
 void setupPins() {
+  // Inicializa o pino do relé como saída e desliga inicialmente
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
-  servo.attach(SERVO_PWM, 500, 2400);
+  digitalWrite(RELAY_PIN, LOW);  // Desliga o relé ao iniciar
+  
+  // Inicializa o servo motor com pino PWM, range de 500 a 2400 microssegundos (de 0º a 180º)
+  servo.attach(SERVO_PWM, 500, 2400);  // Pino de controle PWM do servo
+  
+  // Inicializa o pino do sensor DHT como entrada
+  pinMode(DHT_PIN, INPUT);
+  
+  // Inicializa o pino do NTC como entrada analógica (PIN 34 suporta ADC)
+  pinMode(NTC_PIN, INPUT);
 }
 
 void setupSensors() {
@@ -122,84 +168,129 @@ void checkSensorConnection(bool success, const char* sensorName) {
 }
 
 void loop() {
-  // Leitura periódica de sensores
-  if(millis() - lastSensorRead > SENSOR_INTERVAL) {
-    readSensors();
-    lastSensorRead = millis();
-  }
-
-  // Atualização do display
-  if(millis() - lastDisplayUpdate > DISPLAY_INTERVAL) {
-    updateDisplay();
-    lastDisplayUpdate = millis();
-  }
-
-  controlServo(90);  // Exemplo de posição fixa
-  toggleRelay();
-
-  delay(2000);
 }
 
-void readSensors() {
-  // Leitura DHT22
-  auto dhtData = dhtSensor.getTempAndHumidity();
-  if(dhtSensor.getStatus() == 0) {
-    temperatureDHT = dhtData.temperature;
-    humidityDHT = dhtData.humidity;
-  }
+void vTaskReadDHT(void *pvParams){
+  while (true) {
+    auto dhtData = dhtSensor.getTempAndHumidity();
 
-  // Leitura BMP280
-  pressureBMP = bmp.readPressure() / 100.0F;
-
-  // Leitura MPU6050
-  mpu.getAccelerometerSensor()->getEvent(&accelEvent);
-
-  // Leitura NTC
-  int adc = analogRead(NTC_PIN);
-  if(adc != 0 && adc != 4095) {
-    float R = 10000.0 * (4095.0 / adc - 1.0);
-    temperatureNTC = 1.0/(log(R/10000.0)/BETA + 1.0/298.15) - 273.15;
+    // Protege o acesso aos dados compartilhados
+    if (xSemaphoreTake(x_mutex, portMAX_DELAY)){
+      // Se o status do sensor for bom (sem erro)
+      if (dhtSensor.getStatus() == 0) {        
+        sensor_data.humidityDHT = dhtData.humidity;
+      }
+      
+      // Liberar o mutex após a leitura
+      xSemaphoreGive(x_mutex);
+    }
+    
+    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
   }
 }
 
-void updateDisplay() {
-  lcd.clear();
-  
-  switch(currentDisplay) {
-    case HUMIDITY:
-      lcd.setCursor(0, 0);
-      lcd.print("Umidade:");
-      lcd.setCursor(0, 1);
-      lcd.print(String(humidityDHT, 1) + " %");
-      break;
-      
-    case PRESSURE:
-      lcd.setCursor(0, 0);
-      lcd.print("Pressao:");
-      lcd.setCursor(0, 1);
-      lcd.print(String(pressureBMP, 1) + " hPa");
-      break;
-      
-    case ACCEL:
-      lcd.setCursor(0, 0);
-      lcd.print("Aceleracao:");
-      lcd.setCursor(0, 1);
-      lcd.print(String(accelEvent.acceleration.x, 1) + " m/s²");
-      break;
-      
-    case TEMP_NTC:
-      lcd.setCursor(0, 0);
-      lcd.print("Temperatura NTC:");
-      lcd.setCursor(0, 1);
-      lcd.print(String(temperatureNTC, 1) + " C");
-      break;
+void vTaskReadBMP(void *pvParams) {
+  while (true) {
+    // Protege o acesso aos dados compartilhados
+    if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
+      // Leitura BMP280
+      sensor_data.pressureBMP = bmp.readPressure() / 100.0F; // Convertendo para hPa
+
+      // Liberar o mutex após a leitura
+      xSemaphoreGive(x_mutex);
+    }
+
+    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
   }
-  
-  // Avança para o proximo estado
-  currentDisplay = static_cast<DisplayState>((currentDisplay + 1) % NUM_STATES);
 }
 
-void controlServo(int angle) {
+void vTaskReadMPU(void *pvParams) {
+  while (true) {
+    // Protege o acesso aos dados compartilhados
+    if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
+      // Leitura do MPU6050 (acelerômetro)
+      mpu.getAccelerometerSensor()->getEvent(&accelEvent);
+
+      // Armazenar os dados do acelerômetro
+      sensor_data.accelX = accelEvent.acceleration.x;
+      sensor_data.accelY = accelEvent.acceleration.y;
+      sensor_data.accelZ = accelEvent.acceleration.z;
+      
+      // Liberar o mutex após a leitura
+      xSemaphoreGive(x_mutex);
+    }
+
+    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
+  }
+}
+
+void vTaskReadNTC(void *pvParams) {
+  while (true) {
+    // Protege o acesso aos dados compartilhados
+    if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
+      // Leitura do NTC (termistor)
+      int adc = analogRead(NTC_PIN);
+
+      if (adc != 0 && adc != 4095) {
+        float R = 10000.0 * (4095.0 / adc - 1.0);
+        sensor_data.temperatureNTC = 1.0 / (log(R / 10000.0) / BETA + 1.0 / 298.15) - 273.15;
+      }
+
+      // Liberar o mutex após a leitura
+      xSemaphoreGive(x_mutex);
+    }
+
+    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
+  }
+}
+
+void vTaskUpdateDisplay(void *pvParams) {
+  while (true) {
+    // Protege o acesso aos dados compartilhados
+    if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
+      // Limpar o display
+      lcd.clear();
+      
+      // Exibir umidade
+      lcd.setCursor(0, 0);
+      lcd.print("Umidade: ");
+      lcd.print(sensor_data.humidityDHT, 1);
+      lcd.print(" %");
+
+      // Exibir aceleração
+      lcd.setCursor(0, 2);
+      lcd.print("Aceleracao X: ");
+      lcd.print(accelEvent.acceleration.x, 1);
+      lcd.print(" m/s²");
+
+      // Exibir pressão
+      lcd.setCursor(0, 1);
+      lcd.print("Pressao: ");
+      lcd.print(sensor_data.pressureBMP, 1);
+      lcd.print(" hPa");
+
+      // Exibir temperatura NTC
+      lcd.setCursor(0, 3);
+      lcd.print("Temp NTC: ");
+      lcd.print(sensor_data.temperatureNTC, 1);
+      lcd.print(" C");    
+
+      // Liberar o mutex após a leitura
+      xSemaphoreGive(x_mutex);
+    }
+
+    // Ativa o servo
+    controlServo();
+
+    // Liga/desliga o relé
+    toggleRelay();
+
+    // Atrasar a atualização a cada 2 segundos
+    vTaskDelay(2000);
+  }
+}
+
+void controlServo() {
   for (int pos = 0; pos <= 180; pos++) {
     servo.write(pos);
     delay(15); // Delay necessário para movimento suave
