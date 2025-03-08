@@ -41,6 +41,9 @@
 
 // Constantes
 #define BETA       3950
+#define BETA       3950  // Coeficiente Beta do termistor
+#define R_REF      10000 // Resistor fixo de 10kΩ usado no divisor
+#define T0         298.15 // Temperatura de referência (25°C em Kelvin)
 
 /**************************************
  * Instâncias de Sensores/Atuadores
@@ -78,8 +81,6 @@ sensors_event_t accelEvent;
 // Handlers do FreeRTOS
 SemaphoreHandle_t x_mutex = NULL;
 TaskHandle_t task_update_LCD_handle = NULL;
-TaskHandle_t task_update_relay_handle = NULL;
-TaskHandle_t task_update_servo_handle = NULL;
 TaskHandle_t task_read_DHT_handle = NULL;
 TaskHandle_t task_read_MPU_handle = NULL;
 TaskHandle_t task_read_BMP_handle = NULL;
@@ -185,7 +186,7 @@ void vTaskReadDHT(void *pvParams){
       xSemaphoreGive(x_mutex);
     }
     
-    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
+    vTaskDelay(2000); // Delay para evitar sobrecarga da CPU (1 segundo)
   }
 }
 
@@ -200,7 +201,7 @@ void vTaskReadBMP(void *pvParams) {
       xSemaphoreGive(x_mutex);
     }
 
-    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
+    vTaskDelay(500); // Delay para evitar sobrecarga da CPU (1 segundo)
   }
 }
 
@@ -226,21 +227,24 @@ void vTaskReadMPU(void *pvParams) {
 
 void vTaskReadNTC(void *pvParams) {
   while (true) {
-    // Protege o acesso aos dados compartilhados
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
-      // Leitura do NTC (termistor)
+      // Leitura do ADC
       int adc = analogRead(NTC_PIN);
 
-      if (adc != 0 && adc != 4095) {
-        float R = 10000.0 * (4095.0 / adc - 1.0);
-        sensor_data.temperatureNTC = 1.0 / (log(R / 10000.0) / BETA + 1.0 / 298.15) - 273.15;
+      if (adc > 0 && adc < 4095) { 
+        // Calcular a resistência do NTC usando a fórmula do divisor de tensão
+        float Vout = adc * (3.3 / 4095.0); // Converte ADC para tensão
+        float Rntc = R_REF * (Vout / (3.3 - Vout)); // Calcula a resistência do NTC
+
+        // Fórmula de Steinhart-Hart simplificada para temperatura
+        float tempKelvin = 1.0 / ((log(Rntc / R_REF) / BETA) + (1.0 / T0));
+        sensor_data.temperatureNTC = tempKelvin - 273.15; // Converte Kelvin para Celsius
       }
 
-      // Liberar o mutex após a leitura
       xSemaphoreGive(x_mutex);
     }
 
-    vTaskDelay(1000); // Delay para evitar sobrecarga da CPU (1 segundo)
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay de 1s
   }
 }
 
@@ -258,13 +262,13 @@ void vTaskUpdateDisplay(void *pvParams) {
       lcd.print(" %");
 
       // Exibir aceleração
-      lcd.setCursor(0, 2);
-      lcd.print("Aceleracao X: ");
-      lcd.print(accelEvent.acceleration.x, 1);
+      lcd.setCursor(0, 1);
+      lcd.print("Aceleracao Y: ");
+      lcd.print(sensor_data.accelY, 1);
       lcd.print(" m/s²");
 
       // Exibir pressão
-      lcd.setCursor(0, 1);
+      lcd.setCursor(0, 2);
       lcd.print("Pressao: ");
       lcd.print(sensor_data.pressureBMP, 1);
       lcd.print(" hPa");
@@ -279,27 +283,30 @@ void vTaskUpdateDisplay(void *pvParams) {
       xSemaphoreGive(x_mutex);
     }
 
+    // Liga o relé
+    toggleRelay();
+
     // Ativa o servo
     controlServo();
 
-    // Liga/desliga o relé
+    // Desliga o relé
     toggleRelay();
 
-    // Atrasar a atualização a cada 2 segundos
-    vTaskDelay(2000);
+    // Atrasar a atualização a cada 1 segundos
+    vTaskDelay(1000);
   }
 }
 
 void controlServo() {
   for (int pos = 0; pos <= 180; pos++) {
     servo.write(pos);
-    delay(15); // Delay necessário para movimento suave
+    delay(1); // Delay necessário para movimento suave
   }
 
   // Movimento de 180 a 0 graus
   for (int pos = 180; pos >= 0; pos--) {
     servo.write(pos);
-    delay(15); // Delay necessário para movimento suave
+    delay(1); // Delay necessário para movimento suave
   }
 }
 
