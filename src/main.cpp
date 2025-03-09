@@ -114,27 +114,25 @@ typedef struct {
     { "", "G.E.C.K", "Vault-Tec", "" }, // Tela Inicial (Nome do sistema e logo da Vault-Tec)
     { "", "Welcome!", "", "" }, // Tela de boas vindas 
     { "", "Welcome!", "Engineer #22534", "" }, // Tela de boas vindas (c/ credenciais)
-    { "-> Start procedure", "  Verify Sensors", "  Credits", "  Turn off" }, // Tela do menu (primeira opção)
-    { "   Start procedure", "->Verify Sensors", "  Credits", "  Turn off" }, // Tela do menu (segunda opção)
-    { "   Start procedure", "  Verify Sensors", "->Credits", "  Turn off" }, // Tela do menu (terceira opção)
-    { "   Start procedure", "  Verify Sensors", "  Credits", "->Turn off" }, // Tela do menu (quarta opção)
+    { "->Start procedure", "  Verify Sensors", "  Credits", "  Turn off" }, // Tela do menu (primeira opção)
+    { "  Start procedure", "->Verify Sensors", "  Credits", "  Turn off" }, // Tela do menu (segunda opção)
+    { "  Start procedure", "  Verify Sensors", "->Credits", "  Turn off" }, // Tela do menu (terceira opção)
+    { "  Start procedure", "  Verify Sensors", "  Credits", "->Turn off" }, // Tela do menu (quarta opção)
     { "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE", "->Back" }, // Verificando sensores
     { "ERROR!", "Sensor failure", "Check connections", "-> Retry" }, // Tela de erro de conexão
-    { "G.E.C.K Project", "Lead Eng.: Ismael S.", "Vault 42", "->Back" }, // Tela de Créditos
+    { "G.E.C.K Project", "Eng.: Ismael S.", "Vault 42", "->Back" }, // Tela de Créditos
     { "Starting Procedure.", "", "", ""}, // Iniciando varredura 1
     { "Starting Procedure..", "", "", ""}, // Iniciando varredura 2
     { "Starting Procedure...", "", "", ""}, // Iniciando varredura 3
-    { "Analyzing environment", "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE" }, // Analisando ambiente
-    { "Neutralizing radiation", "Processing...", "Estimated time: 2 min", "RAD_INFO_HERE" }, // Reduzindo radiação
-    { "Regulating humidity", "Adjusting moisture", "Balancing ecosystem", "HUMIDITY_INFO_HERE" }, // Regulando umidade
-    { "Optimizing temperature", "Calibrating levels...", "Maintaining stability", "TEMP_INFO_HERE" }, // Ajustando temperatura
-    { "Generating plant life", "Deploying seeds...", "Monitoring growth", "" }, // Criando vegetação
-    { "Terraforming Complete!", "Life support stable", "Welcome to Eden", "System shutting down..." } // Processo concluído
+    { "Environment:", "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE" }, // Analisando ambiente
+    { "Rad. check:", "Processing", "", "RAD_INFO_HERE" }, // Reduzindo radiação
+    { "Humid. check:", "Moisture", "", "HUMIDITY_INFO_HERE" }, // Regulando umidade
+    { "Temp. check:", "Calibrating", "", "TEMP_INFO_HERE" }, // Ajustando temperatura
+    { "Vegetation...", "Deploying seeds", "Monitoring growth", "" }, // Criando vegetação
+    { "Terraforming", "Complete!", "Welcome", "to Eden!" } // Processo concluído
   };
   
-  ScreenIndex currentScreen; // Índice tipado
-  bool in_menu;
-  int buttonPressed = -1;
+  ScreenIndex currentScreen;    
 } Display_data;
 
 Display_data display_data;
@@ -154,18 +152,27 @@ TaskHandle_t task_read_NTC_handle = NULL;
 volatile bool upPressed = false;
 volatile bool downPressed = false;
 volatile bool selectPressed = false;
+QueueHandle_t xButtonQueue; // fila para os botões
+
+void processButtons();
 
 // Funções de interrupção (ISRs)
 void IRAM_ATTR handleUpButton() {
+  bool upPressedSignal = true;
   upPressed = true;
+  xQueueSendFromISR(xButtonQueue, &upPressedSignal, NULL);  // Envia um sinal para a fila
 }
 
 void IRAM_ATTR handleDownButton() {
+  bool downPressedSignal = true;
   downPressed = true;
+  xQueueSendFromISR(xButtonQueue, &downPressedSignal, NULL);  // Envia um sinal para a fila
 }
 
 void IRAM_ATTR handleSelectButton() {
+  bool selectPressedSignal = true;
   selectPressed = true;
+  xQueueSendFromISR(xButtonQueue, &selectPressedSignal, NULL);  // Envia um sinal para a fila
 }
 
 /**************************************
@@ -179,7 +186,6 @@ void toggleRelay();
 void writeToLCD(const char* line1, const char* line2, const char* line3, const char* line4);
 
 void vTaskUpdateDisplay(void *pvParams);
-void vTaskCheckButtons(void *pvParams);
 void vTaskReadDHT(void *pvParams);
 void vTaskReadMPU(void *pvParams);
 void vTaskReadRadScan3000(void *pvParams);
@@ -199,6 +205,10 @@ void setup() {
 
   // Inicia o sistema
   display_data.currentScreen = SCR_LOADING_1;
+
+  // Cria uma fila para os botões
+  xButtonQueue = xQueueCreate(10, sizeof(bool));
+
 
   // Cria o mutex para gerenciar o acesso às variáveis globais
   x_mutex = xSemaphoreCreateMutex();
@@ -231,11 +241,7 @@ void setupPins() {
   // Inicializa o pino do NTC como entrada analógica (PIN 34 suporta ADC)
   pinMode(NTC_PIN, INPUT);
 
-  // Inicializa os pinos dos botões
-  pinMode(UP_PIN, INPUT_PULLUP);
-  pinMode(DOWN_PIN, INPUT_PULLUP);
-  pinMode(SELECT_PIN, INPUT_PULLUP);
-
+  // Inicializa os pinos dos botões como interrupções
   attachInterrupt(digitalPinToInterrupt(UP_PIN), handleUpButton, FALLING);
   attachInterrupt(digitalPinToInterrupt(DOWN_PIN), handleDownButton, FALLING);
   attachInterrupt(digitalPinToInterrupt(SELECT_PIN), handleSelectButton, FALLING);
@@ -370,80 +376,82 @@ void vTaskReadNTC(void *pvParams) {
     vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay de 1s
   }
 }
+
 // Lógica para processar os botões pressionados na atualização do display
 ScreenIndex last_screen;
 
 void processButtons() {
-  last_screen = display_data.currentScreen;  // Armazena a última tela antes da mudança
+  if (xSemaphoreTake(x_mutex, portMAX_DELAY)){  // Armazena a última tela antes da mudança
+    last_screen = display_data.currentScreen;  
+    
+    if (display_data.currentScreen >= SCR_MENU_START && display_data.currentScreen <= SCR_MENU_TURN_OFF) {
+      if (upPressed) {
+        upPressed = false;
+        if (display_data.currentScreen > SCR_MENU_START) {
+          display_data.currentScreen = (ScreenIndex)(display_data.currentScreen - 1);  // Sobe no menu
+        } else {
+          display_data.currentScreen = SCR_MENU_TURN_OFF;  // Volta para a última opção do menu
+        }
+      }
+      if (downPressed) {
+        downPressed = false;
+        if (display_data.currentScreen < SCR_MENU_TURN_OFF) {
+          // Navega para a próxima tela
+          display_data.currentScreen = (ScreenIndex)(display_data.currentScreen + 1);
+        } else {
+          // Se estiver na última tela, vai para a primeira
+          display_data.currentScreen = SCR_MENU_START;
+        }
+      }
+    
+      if (selectPressed) {
+        selectPressed = false;
+        switch (display_data.currentScreen) {
+          case SCR_MENU_START:          
+            display_data.currentScreen = SCR_PROCEDURE_1;  // Avança para a próxima tela do processo
+            break;
+    
+          case SCR_MENU_VERIFY:          
+            display_data.currentScreen = SCR_SENSORS;  // Vai para a tela de verificação dos sensores            
+            break;
+    
+          case SCR_MENU_CREDITS:          
+            display_data.currentScreen = SCR_CREDITS;  // Vai para a tela de créditos
+            break;
+    
+          case SCR_MENU_TURN_OFF:          
+            lcd.noDisplay();  // Apaga o display
+            delay(1000);
+            ESP.deepSleep(0);  // ESP32 entra em deep sleep
+            break;
+    
+          default:        
+            break;
+        }
+      }
+    } else {
+      // Navega pelos demais menus:
+      if (selectPressed) {
+        selectPressed = false;
+      
+        switch (display_data.currentScreen) {
+          case SCR_SENSORS:          
+            display_data.currentScreen = SCR_MENU_VERIFY;  // Volta para a tela do menu
+            break;
+      
+          case SCR_CREDITS:          
+            display_data.currentScreen = SCR_MENU_CREDITS;  // Volta para a tela do menu          
+            break;
 
-  // Navegar dentro do menu (entre SCR_MENU_START e SCR_MENU_TURN_OFF)
-  if (display_data.currentScreen >= SCR_MENU_START && display_data.currentScreen <= SCR_MENU_TURN_OFF) {
-    if (upPressed) {
-      upPressed = false;
-      if (display_data.currentScreen > SCR_MENU_START) {
-        display_data.currentScreen = (ScreenIndex)(display_data.currentScreen - 1);  // Sobe no menu
-      } else {
-        display_data.currentScreen = SCR_MENU_TURN_OFF;  // Volta para a última opção do menu
+          default:        
+            break;
+        }
       }
     }
 
-    if (downPressed) {
-      downPressed = false;
-      if (display_data.currentScreen < SCR_MENU_TURN_OFF) {
-        display_data.currentScreen = (ScreenIndex)(display_data.currentScreen + 1);  // Desce no menu
-      } else {
-        display_data.currentScreen = SCR_MENU_START;  // Volta para a primeira opção do menu
-      }
-    }
-
-    if (selectPressed) {
-      selectPressed = false;
-    
-      switch (display_data.currentScreen) {
-        case SCR_MENU_START:          
-          display_data.currentScreen = SCR_PROCEDURE_1;  // Avança para a próxima tela do processo
-          break;
-    
-        case SCR_MENU_VERIFY:          
-          display_data.currentScreen = SCR_SENSORS;  // Vai para a tela de verificação dos sensores
-          break;
-    
-        case SCR_MENU_CREDITS:          
-          display_data.currentScreen = SCR_CREDITS;  // Vai para a tela de créditos
-          break;
-    
-        case SCR_MENU_TURN_OFF:          
-          lcd.noDisplay();  // Apaga o display
-          delay(1000);
-          ESP.deepSleep(0);  // ESP32 entra em deep sleep
-          break;
-    
-        default:        
-          break;
-      }
-    }
-  } else {
-    // Navega pelos demais menus:
-    if (selectPressed) {
-      selectPressed = false;
-    
-      switch (display_data.currentScreen) {
-        case SCR_SENSORS:          
-          display_data.currentScreen = SCR_MENU_VERIFY;  // Volta para a tela do menu
-          break;
-    
-        case SCR_CREDITS:          
-          display_data.currentScreen = SCR_SENSORS;  // Vai para a tela de verificação dos sensores
-          break;
-    
-        case SCR_MENU_CREDITS:          
-          display_data.currentScreen = SCR_MENU_CREDITS;  // Vai para a tela de créditos
-          break;
-        default:        
-          break;
-      }
-    }
-  } 
+    // Libera o mutex
+    xSemaphoreGive(x_mutex);
+  }
 }
 
 // função auxiliar que simula a varredura do ambiente (ativa relé e servo)
@@ -480,23 +488,31 @@ void writeToLCD(const char* line1, const char* line2, const char* line3, const c
 
 // Task de atualização do display
 void vTaskUpdateDisplay(void *pvParams) {
+  bool buttonSignal;
+
   while (true) {
+    if (xQueueReceive(xButtonQueue, &buttonSignal, portMAX_DELAY)) {
+      if (buttonSignal) {
+        processButtons();  // Chama o processamento de botões
+      }
+    }
+
     // Protege o acesso aos dados compartilhados
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
       char RAD_INFO[16]; 
       char TEMP_INFO[16]; 
       char HUMIDITY_INFO[16]; 
 
-      int transition_delay = 750;
+      int transition_delay = 1000;
       
-      sprintf(RAD_INFO, "Rad: %s microSv/h", sensor_data.rad_level);
-      sprintf(TEMP_INFO, "Temperature: %s  C", sensor_data.temperatureNTC);
-      sprintf(HUMIDITY_INFO, "Humidity: %s  %", sensor_data.humidityDHT);          
+      sprintf(RAD_INFO, "Rad: %s %", sensor_data.rad_level);
+      sprintf(TEMP_INFO, "Temp: %s C", sensor_data.temperatureNTC);
+      sprintf(HUMIDITY_INFO, "Humid: %s %", sensor_data.humidityDHT);          
 
       switch (display_data.currentScreen) {
         case SCR_LOADING_1:
             // Exibe uma tela de carregamento do sistema
-            for (int i = 0; i < 3; i++){
+            for (int i = 0; i < 2; i++){
               writeToLCD(display_data.screens[SCR_LOADING_1][0], display_data.screens[SCR_LOADING_1][1], display_data.screens[SCR_LOADING_1][2], display_data.screens[SCR_LOADING_1][3]);
               delay(transition_delay);
               writeToLCD(display_data.screens[SCR_LOADING_2][0], display_data.screens[SCR_LOADING_2][1], display_data.screens[SCR_LOADING_2][2], display_data.screens[SCR_LOADING_2][3]);
@@ -510,21 +526,21 @@ void vTaskUpdateDisplay(void *pvParams) {
             break;
         case SCR_HOME:
             writeToLCD(display_data.screens[SCR_HOME][0], display_data.screens[SCR_HOME][1], display_data.screens[SCR_HOME][2], display_data.screens[SCR_HOME][3]);
-            delay(transition_delay * 3);
+            delay(transition_delay * 2);
 
             // Atualiza a tela
             display_data.currentScreen = SCR_WELCOME;
             break;
         case SCR_WELCOME:
             writeToLCD(display_data.screens[SCR_WELCOME][0], display_data.screens[SCR_WELCOME][1], display_data.screens[SCR_WELCOME][2], display_data.screens[SCR_WELCOME][3]);
-            delay(transition_delay * 3);
+            delay(transition_delay * 2);
 
             // Atualiza a tela
             display_data.currentScreen = SCR_WELCOME_CREDENTIALS;
             break;
         case SCR_WELCOME_CREDENTIALS:
             writeToLCD(display_data.screens[SCR_WELCOME_CREDENTIALS][0], display_data.screens[SCR_WELCOME_CREDENTIALS][1], display_data.screens[SCR_WELCOME_CREDENTIALS][2], display_data.screens[SCR_WELCOME_CREDENTIALS][3]);
-            delay(transition_delay * 3);
+            delay(transition_delay * 2);
 
             // Atualiza a tela
             display_data.currentScreen = SCR_MENU_START;
@@ -543,21 +559,9 @@ void vTaskUpdateDisplay(void *pvParams) {
             break;
         case SCR_SENSORS:
             // Simula a varredura do ambiente
-            ambientCheck();
-
-            // Se houve algum erro na leitura dos sensores, troca para a tela de erro nos sensores
-            if (sensor_error) {
-              display_data.currentScreen = SCR_ERROR;
-              delay(transition_delay * 3);
-
-              // Desliga o sistema
-              lcd.noDisplay();  // Apaga o display
-              delay(1000);
-              ESP.deepSleep(0);  // ESP32 entra em deep sleep
-            break;
-            } else {
-              writeToLCD(RAD_INFO, TEMP_INFO, HUMIDITY_INFO, display_data.screens[SCR_SENSORS][3]);
-            }            
+            ambientCheck();            
+            
+            writeToLCD(RAD_INFO, TEMP_INFO, HUMIDITY_INFO, display_data.screens[SCR_SENSORS][3]);            display_data.currentScreen = SCR_SENSORS;
         case SCR_ERROR:
             writeToLCD(display_data.screens[SCR_ERROR][0], display_data.screens[SCR_ERROR][1], display_data.screens[SCR_ERROR][2], display_data.screens[SCR_ERROR][3]);
             break;
