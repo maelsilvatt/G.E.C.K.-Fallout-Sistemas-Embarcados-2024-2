@@ -40,6 +40,11 @@
 #define NTC_PIN    34
 #define RELAY_PIN  12
 
+// LEDs de alerta
+#define GREEN_LED_PIN 14
+#define ORANGE_LED_PIN 27
+#define RED_LED_PIN 26
+
 // Botões
 #define UP_PIN 17
 #define DOWN_PIN 16
@@ -230,10 +235,15 @@ void setup() {
 void setupPins() {
   // Inicializa o pino do relé como saída e desliga inicialmente
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);  // Desliga o relé ao iniciar
+  digitalWrite(RELAY_PIN, LOW);
   
   // Inicializa o servo motor com pino PWM, range de 500 a 2400 microssegundos (de 0º a 180º)
-  servo.attach(SERVO_PWM, 500, 2400);  // Pino de controle PWM do servo
+  servo.attach(SERVO_PWM, 500, 2400);
+
+  // Inicializa os pinos dos LEDs de alerta de radiação
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(ORANGE_LED_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
   
   // Inicializa o pino do sensor DHT como entrada
   pinMode(DHT_PIN, INPUT);
@@ -321,6 +331,19 @@ void vTaskReadRadScan3000(void *pvParams) {
       // Garantir que o valor de radiação fique dentro dos limites 0-99
       if (tempMappedRad < radMin) tempMappedRad = radMin;
       if (tempMappedRad > radMax) tempMappedRad = radMax;
+
+      // Ativa o relé correspondente ao nível de radiação
+      digitalWrite(GREEN_LED_PIN, LOW);
+      digitalWrite(ORANGE_LED_PIN, LOW);
+      digitalWrite(RED_LED_PIN, LOW);
+
+      if (tempMappedRad >= 0 && tempMappedRad < 15) {
+        digitalWrite(GREEN_LED_PIN, HIGH);
+      } else if (tempMappedRad >= 15 && tempMappedRad < 30) {
+        digitalWrite(ORANGE_LED_PIN, HIGH);
+      } else if (tempMappedRad >= 30) {
+        digitalWrite(RED_LED_PIN, HIGH);
+      }
       
       // Armazena o dado do sensor em char[]
       dtostrf(tempMappedRad, 4, 0, sensor_data.rad_level);
@@ -501,7 +524,10 @@ void vTaskUpdateDisplay(void *pvParams) {
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
       char RAD_INFO[16]; 
       char TEMP_INFO[16]; 
-      char HUMIDITY_INFO[16];       
+      char HUMIDITY_INFO[16];   
+      const char* MOCK_RAD = "Rad: 0 %";  
+      const char* MOCK_HUMIDTY = "Humid: 60 %";    
+      const char* MOCK_TEMP = "Temp: 26 C";
       
       sprintf(RAD_INFO, "Rad: %s %%", sensor_data.rad_level);
       sprintf(TEMP_INFO, "Temp: %s C", sensor_data.temperatureNTC);
@@ -600,8 +626,7 @@ void vTaskUpdateDisplay(void *pvParams) {
               ambientCheck();
             }
 
-            // Exibe um nível de radiação estabilizado (falso)
-            const char* MOCK_RAD = "Rad: 0 %";
+            // Exibe um nível de radiação estabilizado (falso)            
             writeToLCD(display_data.screens[SCR_RADIATION][0], "Done!", display_data.screens[SCR_RADIATION][2], MOCK_RAD);
             delay(transition_delay);
 
@@ -620,8 +645,7 @@ void vTaskUpdateDisplay(void *pvParams) {
               ambientCheck();
             }
 
-            // Exibe uma umidade estabilizada (falsa)
-            const char* MOCK_HUMIDTY = "Humid: 60 %";              
+            // Exibe uma umidade estabilizada (falsa)                        
             writeToLCD(display_data.screens[SCR_HUMIDITY][0], "Done!", display_data.screens[SCR_HUMIDITY][2], MOCK_HUMIDTY);
             delay(transition_delay);
 
@@ -640,8 +664,7 @@ void vTaskUpdateDisplay(void *pvParams) {
               ambientCheck();
             }
 
-            // Exibe uma temperatura estabilizada (falsa)
-            const char* MOCK_TEMP = "Temp: 26 C";
+            // Exibe uma temperatura estabilizada (falsa)            
             writeToLCD(display_data.screens[SCR_TEMPERATURE][0], "Done!", display_data.screens[SCR_TEMPERATURE][2], MOCK_TEMP);
             delay(transition_delay);
   
@@ -693,6 +716,7 @@ void controlServo() {
   }
 }
 
+// Função para lidar/desligar o relé
 void toggleRelay() {
   relayState = !relayState;
   digitalWrite(RELAY_PIN, relayState);
