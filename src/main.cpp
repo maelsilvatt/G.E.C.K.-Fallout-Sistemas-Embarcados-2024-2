@@ -121,10 +121,10 @@ typedef struct {
     { "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE", "->Back" }, // Verificando sensores
     { "ERROR!", "Sensor failure", "Check connections", "-> Retry" }, // Tela de erro de conexão
     { "G.E.C.K Project", "Eng.: Ismael S.", "Vault 42", "->Back" }, // Tela de Créditos
-    { "Starting Procedure.", "", "", ""}, // Iniciando varredura 1
-    { "Starting Procedure..", "", "", ""}, // Iniciando varredura 2
-    { "Starting Procedure...", "", "", ""}, // Iniciando varredura 3
-    { "Environment:", "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE" }, // Analisando ambiente
+    { "Starting", "Procedure.", "", ""}, // Iniciando varredura 1
+    { "Starting", "Procedure..", "", ""}, // Iniciando varredura 2
+    { "Starting", "Procedure...", "", ""}, // Iniciando varredura 3
+    { "Environment check:", "RAD_INFO_HERE", "TEMP_INFO_HERE", "HUMIDITY_INFO_HERE" }, // Analisando ambiente
     { "Rad. check:", "Processing", "", "RAD_INFO_HERE" }, // Reduzindo radiação
     { "Humid. check:", "Moisture", "", "HUMIDITY_INFO_HERE" }, // Regulando umidade
     { "Temp. check:", "Calibrating", "", "TEMP_INFO_HERE" }, // Ajustando temperatura
@@ -472,7 +472,6 @@ void writeToLCD(const char* line1, const char* line2, const char* line3, const c
   // Limpar o display
   lcd.clear();
 
-
   lcd.setCursor(0, 0);  // Coloca o cursor na primeira linha, coluna 0
   lcd.print(line1);     
 
@@ -489,6 +488,7 @@ void writeToLCD(const char* line1, const char* line2, const char* line3, const c
 // Task de atualização do display
 void vTaskUpdateDisplay(void *pvParams) {
   bool buttonSignal;
+  int transition_delay = 1000;
 
   while (true) {
     if (xQueueReceive(xButtonQueue, &buttonSignal, portMAX_DELAY)) {
@@ -501,13 +501,11 @@ void vTaskUpdateDisplay(void *pvParams) {
     if (xSemaphoreTake(x_mutex, portMAX_DELAY)) {
       char RAD_INFO[16]; 
       char TEMP_INFO[16]; 
-      char HUMIDITY_INFO[16]; 
-
-      int transition_delay = 1000;
+      char HUMIDITY_INFO[16];       
       
-      sprintf(RAD_INFO, "Rad: %s %", sensor_data.rad_level);
+      sprintf(RAD_INFO, "Rad: %s %%", sensor_data.rad_level);
       sprintf(TEMP_INFO, "Temp: %s C", sensor_data.temperatureNTC);
-      sprintf(HUMIDITY_INFO, "Humid: %s %", sensor_data.humidityDHT);          
+      sprintf(HUMIDITY_INFO, "Humid: %s %%", sensor_data.humidityDHT);          
 
       switch (display_data.currentScreen) {
         case SCR_LOADING_1:
@@ -558,10 +556,11 @@ void vTaskUpdateDisplay(void *pvParams) {
             writeToLCD(display_data.screens[SCR_MENU_TURN_OFF][0], display_data.screens[SCR_MENU_TURN_OFF][1], display_data.screens[SCR_MENU_TURN_OFF][2], display_data.screens[SCR_MENU_TURN_OFF][3]);
             break;
         case SCR_SENSORS:
+            writeToLCD(RAD_INFO, TEMP_INFO, HUMIDITY_INFO, display_data.screens[SCR_SENSORS][3]);
+
             // Simula a varredura do ambiente
-            ambientCheck();            
-            
-            writeToLCD(RAD_INFO, TEMP_INFO, HUMIDITY_INFO, display_data.screens[SCR_SENSORS][3]);            display_data.currentScreen = SCR_SENSORS;
+            ambientCheck();
+            break;
         case SCR_ERROR:
             writeToLCD(display_data.screens[SCR_ERROR][0], display_data.screens[SCR_ERROR][1], display_data.screens[SCR_ERROR][2], display_data.screens[SCR_ERROR][3]);
             break;
@@ -571,60 +570,113 @@ void vTaskUpdateDisplay(void *pvParams) {
         case SCR_PROCEDURE_1:
             // Exibe as telas de inicialização do procedimento de varredura do ambiente
             writeToLCD(display_data.screens[SCR_PROCEDURE_1][0], display_data.screens[SCR_PROCEDURE_1][1], display_data.screens[SCR_PROCEDURE_1][2], display_data.screens[SCR_PROCEDURE_1][3]);
-            delay(transition_delay * 2);
+            delay(transition_delay);
             writeToLCD(display_data.screens[SCR_PROCEDURE_2][0], display_data.screens[SCR_PROCEDURE_2][1], display_data.screens[SCR_PROCEDURE_2][2], display_data.screens[SCR_PROCEDURE_2][3]);
-            delay(transition_delay * 2);
+            delay(transition_delay);
             writeToLCD(display_data.screens[SCR_PROCEDURE_3][0], display_data.screens[SCR_PROCEDURE_3][1], display_data.screens[SCR_PROCEDURE_3][2], display_data.screens[SCR_PROCEDURE_3][3]);
-            delay(transition_delay * 2);
+            delay(transition_delay);
 
             // Atualiza a tela
             display_data.currentScreen = SCR_ANALYZING;
-            
             break;
         case SCR_ANALYZING:
-            writeToLCD(display_data.screens[SCR_ANALYZING][0], RAD_INFO, TEMP_INFO, HUMIDITY_INFO);
+            for (int i = 0; i < 2; i++){
+              writeToLCD(display_data.screens[SCR_ANALYZING][0], RAD_INFO, TEMP_INFO, HUMIDITY_INFO);
+              delay(transition_delay);
 
-            // Simula a varredura do ambiente
-            ambientCheck();
+              // Simula a varredura do ambiente
+              ambientCheck();
+            }
+
+            // Troca para a próxima tela
+            display_data.currentScreen = SCR_RADIATION;
             break;
         case SCR_RADIATION:
-            writeToLCD(display_data.screens[SCR_RADIATION][0], display_data.screens[SCR_RADIATION][1], display_data.screens[SCR_RADIATION][2], RAD_INFO);
+            for (int i = 0; i < 2; i++){
+              writeToLCD(display_data.screens[SCR_RADIATION][0], display_data.screens[SCR_RADIATION][1], display_data.screens[SCR_RADIATION][2], RAD_INFO);
+              delay(transition_delay);
+
+              // Simula a varredura do ambiente
+              ambientCheck();
+            }
+
+            // Exibe um nível de radiação estabilizado (falso)
+            const char* MOCK_RAD = "Rad: 0 %";
+            writeToLCD(display_data.screens[SCR_RADIATION][0], "Done!", display_data.screens[SCR_RADIATION][2], MOCK_RAD);
+            delay(transition_delay);
 
             // Simula a varredura do ambiente
             ambientCheck();
+
+            // Troca para a próxima tela
+            display_data.currentScreen = SCR_HUMIDITY;
             break;
         case SCR_HUMIDITY:
-            writeToLCD(display_data.screens[SCR_HUMIDITY][0],display_data.screens[SCR_HUMIDITY][1], display_data.screens[SCR_HUMIDITY][2], HUMIDITY_INFO);
+            for (int i = 0; i < 2; i++){
+              writeToLCD(display_data.screens[SCR_HUMIDITY][0], display_data.screens[SCR_HUMIDITY][1], display_data.screens[SCR_HUMIDITY][2], HUMIDITY_INFO);
+              delay(transition_delay);
+
+              // Simula a varredura do ambiente
+              ambientCheck();
+            }
+
+            // Exibe uma umidade estabilizada (falsa)
+            const char* MOCK_HUMIDTY = "Humid: 60 %";              
+            writeToLCD(display_data.screens[SCR_HUMIDITY][0], "Done!", display_data.screens[SCR_HUMIDITY][2], MOCK_HUMIDTY);
+            delay(transition_delay);
 
             // Simula a varredura do ambiente
             ambientCheck();
+
+            // Troca para a próxima tela
+            display_data.currentScreen = SCR_TEMPERATURE;
             break;
         case SCR_TEMPERATURE:
-            writeToLCD(display_data.screens[SCR_TEMPERATURE][0], display_data.screens[SCR_TEMPERATURE][1], display_data.screens[SCR_TEMPERATURE][2], TEMP_INFO);
+            for (int i = 0; i < 2; i++){
+              writeToLCD(display_data.screens[SCR_TEMPERATURE][0], display_data.screens[SCR_TEMPERATURE][1], display_data.screens[SCR_TEMPERATURE][2], TEMP_INFO);
+              delay(transition_delay);
 
+              // Simula a varredura do ambiente
+              ambientCheck();
+            }
+
+            // Exibe uma temperatura estabilizada (falsa)
+            const char* MOCK_TEMP = "Temp: 26 C";
+            writeToLCD(display_data.screens[SCR_TEMPERATURE][0], "Done!", display_data.screens[SCR_TEMPERATURE][2], MOCK_TEMP);
+            delay(transition_delay);
+  
             // Simula a varredura do ambiente
-            ambientCheck();
+            ambientCheck();            
+
+            // Troca para a próxima tela
+            display_data.currentScreen = SCR_GENERATING;
             break;
         case SCR_GENERATING:
             writeToLCD(display_data.screens[SCR_GENERATING][0],display_data.screens[SCR_GENERATING][1],display_data.screens[SCR_GENERATING][2], display_data.screens[SCR_GENERATING][3]);
+            delay(transition_delay);
 
             // Simula a varredura do ambiente
             ambientCheck();
+
+            // Troca para a próxima tela
+            display_data.currentScreen = SCR_COMPLETED;
             break;
         case SCR_COMPLETED:
             writeToLCD(display_data.screens[SCR_COMPLETED][0], display_data.screens[SCR_COMPLETED][1], display_data.screens[SCR_COMPLETED][2], display_data.screens[SCR_COMPLETED][3]);
+
+            // Volta para o menu inicial
+            display_data.currentScreen = SCR_MENU_START;
             break;
-        default:
-            // Handle default case
+        default:            
             break;
     }    
 
-      // Liberar o mutex após a leitura
-      xSemaphoreGive(x_mutex);
+    // Liberar o mutex após a leitura
+    xSemaphoreGive(x_mutex);
     }
 
     // Atrasar a atualização a cada 2 segundos
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    vTaskDelay(transition_delay / portTICK_PERIOD_MS);
   }
 }
 
