@@ -76,6 +76,13 @@
       "top": -160.8,
       "left": 355.4,
       "attrs": { "color": "red", "xray": "1" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "text1",
+      "top": -220.8,
+      "left": 268.8,
+      "attrs": { "text": "Wait for boot (3 sec)!!!" }
     }
   ],
   "connections": [
@@ -119,17 +126,17 @@
     [ "chip1:VCC", "esp:3V3", "red", [ "h-153.6" ] ],
     [ "btn2:2.r", "esp:16", "green", [ "h9.6", "v4" ] ],
     [ "btn1:2.r", "esp:17", "green", [ "h9.8", "v297.8" ] ],
+    [ "btn2:1.l", "esp:GND.2", "black", [ "h-0.2", "v90.2", "h67.2" ] ],
+    [ "btn1:1.l", "esp:GND.2", "black", [ "h0", "v144", "h67.2" ] ],
+    [ "btn3:1.l", "esp:0", "red", [ "h-9.8", "v3.8" ] ],
+    [ "btn3:2.r", "esp:GND.2", "black", [ "h0", "v100", "h-96" ] ],
     [ "dht1:VCC", "bb2:8b.h", "", [ "$bb" ] ],
     [ "dht1:SDA", "bb2:9b.h", "", [ "$bb" ] ],
     [ "dht1:NC", "bb2:10b.h", "", [ "$bb" ] ],
     [ "dht1:GND", "bb2:11b.h", "", [ "$bb" ] ],
     [ "ntc1:GND", "bb2:22t.d", "", [ "$bb" ] ],
     [ "ntc1:VCC", "bb2:21t.d", "", [ "$bb" ] ],
-    [ "ntc1:OUT", "bb2:20t.d", "", [ "$bb" ] ],
-    [ "btn2:1.l", "esp:GND.2", "black", [ "h-0.2", "v90.2", "h67.2" ] ],
-    [ "btn1:1.l", "esp:GND.2", "black", [ "h0", "v144", "h67.2" ] ],
-    [ "btn3:1.l", "esp:0", "red", [ "h-9.8", "v3.8" ] ],
-    [ "btn3:2.r", "esp:GND.2", "black", [ "h0", "v100", "h-96" ] ]
+    [ "ntc1:OUT", "bb2:20t.d", "", [ "$bb" ] ]
   ],
   "dependencies": {}
 }
