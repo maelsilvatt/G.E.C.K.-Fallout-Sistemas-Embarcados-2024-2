@@ -81,8 +81,8 @@
       "type": "wokwi-text",
       "id": "text1",
       "top": -220.8,
-      "left": 268.8,
-      "attrs": { "text": "Wait for boot (3 sec)!!!" }
+      "left": 259.2,
+      "attrs": { "text": "Wait for green LED to boot!!!" }
     },
     { "type": "wokwi-led", "id": "led3", "top": -32.4, "left": 80.6, "attrs": { "color": "red" } },
     {
