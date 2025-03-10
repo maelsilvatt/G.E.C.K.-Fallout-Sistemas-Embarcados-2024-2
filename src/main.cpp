@@ -495,21 +495,6 @@ void processButtons() {
             display_data.currentScreen = SCR_SENSORS;
           }
         }
-        if (selectPressed) {
-          selectPressed = false;
-        
-          switch (display_data.currentScreen) {
-            case SCR_SENSORS:          
-              display_data.currentScreen = SCR_MENU_VERIFY;  // Volta para a tela do menu
-              break;
-
-            case SCR_SENSORS_2:          
-              display_data.currentScreen = SCR_MENU_VERIFY;  // Volta para a tela do menu
-              break;
-            default:
-              break;
-        }
-      }
     }
 
     // Libera o mutex
