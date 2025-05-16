@@ -223,13 +223,13 @@ void setup() {
   // Associa as tasks ao semáfoto e a um core
   if (x_mutex != NULL ) {    
     // Adiciona as tarefas de leitura dos sensores ao mutex
-    xTaskCreatePinnedToCore(vTaskReadDHT, "task_dht", 4096, NULL, 0, &task_read_DHT_handle, 0);
-    xTaskCreatePinnedToCore(vTaskReadMPU, "task_mpu", 4096, NULL, 0, &task_read_MPU_handle, 0);
-    xTaskCreatePinnedToCore(vTaskReadRadScan3000, "task_radscan", 4096, NULL, 0, &task_read_BMP_handle, 0);
-    xTaskCreatePinnedToCore(vTaskReadNTC, "task_ntc", 4096, NULL, 0, &task_read_NTC_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadDHT, "task_dht", 4096, NULL, 1, &task_read_DHT_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadMPU, "task_mpu", 4096, NULL, 1, &task_read_MPU_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadRadScan3000, "task_radscan", 4096, NULL, 1, &task_read_BMP_handle, 0);
+    xTaskCreatePinnedToCore(vTaskReadNTC, "task_ntc", 4096, NULL, 1, &task_read_NTC_handle, 0);
 
     // Adiciona a tarefa de atualizar o display ao mutex
-    xTaskCreatePinnedToCore(vTaskUpdateDisplay, "task_lcd", 4096, NULL, 1, &task_update_LCD_handle, 1);    
+    xTaskCreatePinnedToCore(vTaskUpdateDisplay, "task_lcd", 4096, NULL, 0, &task_update_LCD_handle, 1);    
   }
 }
 
